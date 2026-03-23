@@ -100,8 +100,12 @@ class URLFeatureExtractor:
         ]
         return 1 if any(re.search(p, self.page_content) for p in patterns) else 0
 
+    # FIXED — handles None .string safely
     def has_title(self):
-        return 1 if self.soup and self.soup.title and self.soup.title.string.strip() else 0
+        try:
+            return 1 if self.soup and self.soup.title and self.soup.title.string and self.soup.title.string.strip() else 0
+        except:
+            return 0
 
     def has_description(self):
         tag = self.soup.find('meta', attrs={'name': 'description'}) if self.soup else None
