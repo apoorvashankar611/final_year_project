@@ -54,8 +54,6 @@ best_xgb_model.pkl: Trained ML model
 **🎓 Project Context**
 This extension is the implementation part of a research project on phishing detection using machine learning. The goal is to build a practical, scalable solution for securing users against phishing attacks during regular browsing.
 
-📜 License
-This project is open-source and available under the MIT License.
 
 **If you want to use this just download it as a zip and then unzip it in your computer and enable the developer mode in chrome under the extension and load unpacked the Frontend Folder there pin it and you are ready to go**
 
