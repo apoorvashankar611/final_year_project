@@ -24,7 +24,44 @@ const SOCIAL_MEDIA_DOMAINS = [
   "snapchat.com",
   "reddit.com",
   "fake.facebook.com",
+  // Added: Most used social media platforms in India
+  "whatsapp.com",
+  "web.whatsapp.com",
+  "telegram.org",
+  "web.telegram.org",
+  "discord.com",
+  "sharechat.com",
+  "moj.tv",
+  "josh.app",
+  "roposo.com",
+  "quora.com",
   // Add more social media platforms here as needed
+];
+
+// ============================================================
+// ALWAYS SAFE DOMAINS
+// These are verified real social media platforms.
+// They skip ML analysis entirely and are marked safe directly
+// to avoid false positives from the ML model.
+// e.g. linkedin.com was incorrectly flagged as phishing
+// ============================================================
+const ALWAYS_SAFE_DOMAINS = [
+  "linkedin.com",
+  "instagram.com",
+  "facebook.com",
+  "twitter.com",
+  "x.com",
+  "youtube.com",
+  "tiktok.com",
+  "whatsapp.com",
+  "web.whatsapp.com",
+  "telegram.org",
+  "web.telegram.org",
+  "snapchat.com",
+  "reddit.com",
+  "discord.com",
+  "pinterest.com",
+  "quora.com",
 ];
 
 /**
@@ -388,6 +425,25 @@ async function checkForPhishing(url, tabId, isReload = false) {
       return { url, notSocialMedia: true };
     }
 
+    // ----------------------------------------------------------
+    // ALWAYS SAFE DOMAINS CHECK
+    // These are verified real social media platforms.
+    // Skip ML model entirely to avoid false positives.
+    // e.g. linkedin.com was incorrectly flagged by ML model
+    // ----------------------------------------------------------
+    const isAlwaysSafe = ALWAYS_SAFE_DOMAINS.some((d) => domain.includes(d));
+    if (isAlwaysSafe) {
+      const result = {
+        url,
+        isPhishing: false,
+        aiSuspicion: false,
+        timestamp: new Date().toLocaleString(),
+      };
+      storeScanHistory(result);
+      injectPopup(tabId, url, false, false, false, false);
+      return result;
+    }
+
     // ===================================================
     // SAME DOMAIN CHECK LOGIC (unchanged from original)
     // ===================================================
@@ -512,6 +568,124 @@ setInterval(
   },
   30 * 60 * 1000,
 );
+
+// ============================================================
+// NEW FEATURE: Highlighted Text Phishing Detection
+// Listens for text selection on social media pages only
+// ============================================================
+
+// Inject the text selection listener into social media pages
+function injectTextSelectionListener(tabId, url) {
+  // Only run on social media pages
+  if (!isSocialMediaUrl(url)) return;
+
+  chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      // Avoid injecting multiple times
+      if (window.__phishShieldTextListenerActive) return;
+      window.__phishShieldTextListenerActive = true;
+
+      document.addEventListener("mouseup", () => {
+        const selectedText = window.getSelection().toString().trim();
+
+        // Only check if user selected more than 10 characters
+        if (selectedText.length > 10) {
+          // Send selected text to background script
+          chrome.runtime.sendMessage({
+            action: "checkSelectedText",
+            text: selectedText,
+          });
+        }
+      });
+    },
+  });
+}
+
+// Listen for text check requests from content script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "checkSelectedText") {
+    // Send selected text to backend for analysis
+    fetch("http://127.0.0.1:8000/predict_text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: request.text }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        // Store result so popup can read it
+        chrome.storage.local.set({
+          lastTextScan: {
+            text: request.text.substring(0, 100), // store first 100 chars
+            result: data.result,
+            isPhishing: data.is_phishing,
+            matchedKeywords: data.matched_keywords || [],
+            suspiciousPatterns: data.suspicious_patterns || [],
+            timestamp: new Date().toLocaleString(),
+          },
+        });
+
+        // Show inline badge on the page
+        chrome.scripting.executeScript({
+          target: { tabId: sender.tab.id },
+          func: (result, isPhishing) => {
+            // Remove existing text scan badge
+            document.getElementById("text-scan-badge")?.remove();
+
+            const badge = document.createElement("div");
+            badge.id = "text-scan-badge";
+            badge.style.cssText = `
+              position: fixed;
+              bottom: 20px;
+              right: 20px;
+              background: ${isPhishing ? "#ff4444" : "#4CAF50"};
+              color: white;
+              padding: 10px 16px;
+              border-radius: 6px;
+              box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+              z-index: 999999;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+              max-width: 320px;
+            `;
+            badge.innerHTML = `
+              ${isPhishing ? "⚠️" : "✅"}
+              <strong>Selected Text:</strong>
+              ${isPhishing ? "Phishing detected" : "Looks legitimate"}
+              <button id="close-text-badge" style="
+                background: none; border: none; color: white;
+                font-size: 16px; cursor: pointer;
+                margin-left: 8px; float: right;
+              ">×</button>
+            `;
+            document.body.appendChild(badge);
+
+            document
+              .getElementById("close-text-badge")
+              ?.addEventListener("click", () => badge.remove());
+
+            // Auto remove after 6 seconds
+            setTimeout(() => badge.remove(), 6000);
+          },
+          args: [data.result, data.is_phishing],
+        });
+      })
+      .catch((err) => console.error("Text scan error:", err));
+
+    return true;
+  }
+});
+
+// Inject listener when page loads
+chrome.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId === 0) {
+    setTimeout(() => {
+      chrome.tabs.get(details.tabId, (tab) => {
+        if (tab.url) injectTextSelectionListener(details.tabId, tab.url);
+      });
+    }, 1000);
+  }
+});
 
 console.log(
   "PhishShield background script started — Social Media Filter active",
