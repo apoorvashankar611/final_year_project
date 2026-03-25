@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Phishing Detector",
-  "version": "1.0",
-  "description": "Detect if the current tab is a phishing website.",
+  "name": "PhishShield",
+  "version": "1.1",
+  "description": "Detects phishing URLs and phishing text on social media websites.",
   "permissions": [
     "tabs",
     "storage",
@@ -22,9 +22,34 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png"
   },
-  "host_permissions": ["<all_urls>", "http://127.0.0.1:8000/*"],
+
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1:8000/*",
+    "http://127.0.0.1:5000/*"
+  ],
+
   "background": {
     "service_worker": "background.js",
     "type": "module"
-  }
-}
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.facebook.com/*",
+        "*://*.instagram.com/*",
+        "*://*.twitter.com/*",
+        "*://*.x.com/*",
+        "*://*.linkedin.com/*",
+        "*://*.youtube.com/*",
+        "*://*.tiktok.com/*",
+        "*://*.pinterest.com/*",
+        "*://*.snapchat.com/*",
+        "*://*.reddit.com/*"
+      ],
+      "js": ["text_detector.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}   

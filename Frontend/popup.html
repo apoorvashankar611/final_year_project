@@ -1,3 +1,4 @@
+C:\Users\gugul\OneDrive\Desktop\final year project\final_year_project\Frontend\popup.html
 <!doctype html>
 <html lang="en">
   <head>
@@ -5,11 +6,7 @@
     <title>PhishShield</title>
     <link rel="stylesheet" href="styles.css" />
     <style>
-      /* =====================================================
-       REQUIREMENT 4: Styles for all 3 result states
-       ===================================================== */
-
-      /* Shared base for result cards */
+      /* ── Original result card styles (UNCHANGED) ────────── */
       #result > div {
         padding: 12px 14px;
         border-radius: 6px;
@@ -18,29 +15,21 @@
         line-height: 1.5;
         margin-top: 10px;
       }
-
-      /* STATE 1: Not a social media website */
       .not-social {
         background: #eceff1;
         border-left: 4px solid #607d8b;
         color: #37474f;
       }
-
-      /* STATE 2: Safe social media website */
       .safe {
         background: #e8f5e9;
         border-left: 4px solid #4caf50;
         color: #2e7d32;
       }
-
-      /* STATE 3: Phishing website detected */
       .phishing {
         background: #ffebee;
         border-left: 4px solid #ff4444;
         color: #b71c1c;
       }
-
-      /* Generic error state */
       .error {
         background: #fff3e0;
         border-left: 4px solid #ff9800;
@@ -50,59 +39,156 @@
         font-size: 13px;
         margin-top: 10px;
       }
-
-      /* =====================================================
-       History list styles
-       ===================================================== */
       .history-entry {
         padding: 10px;
         margin: 5px 0;
         border-radius: 4px;
         background: #f5f5f5;
       }
-      .history-entry.phishing {
-        border-left: 4px solid #ff4444;
-      }
-      .history-entry.safe {
-        border-left: 4px solid #4caf50;
-      }
-      /* NEW: style for not-social entries in history */
-      .history-entry.not-social {
-        border-left: 4px solid #607d8b;
-      }
-      .history-entry .url {
-        color: #666;
-        font-size: 12px;
-        word-break: break-all;
-      }
-      .history-entry .time {
-        color: #999;
-        font-size: 11px;
-      }
+      .history-entry.phishing { border-left: 4px solid #ff4444; }
+      .history-entry.safe     { border-left: 4px solid #4caf50; }
+      .history-entry.not-social { border-left: 4px solid #607d8b; }
+      .history-entry .url  { color: #666; font-size: 12px; word-break: break-all; }
+      .history-entry .time { color: #999; font-size: 11px; }
       .report-link {
         color: #ff4444;
         text-decoration: none;
         font-size: 12px;
         margin-left: 5px;
       }
-      .report-link:hover {
-        text-decoration: underline;
+      .report-link:hover { text-decoration: underline; }
+
+      /* ── NEW: Text scan section ─────────────────────────── */
+      #text-scan-section {
+        margin-top: 4px;
       }
+      #text-scan-section h4 {
+        margin: 8px 0 4px;
+        font-size: 13px;
+        color: #444;
+      }
+      #text-result-card {
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        line-height: 1.5;
+        font-family: Arial, sans-serif;
+      }
+      #text-result-card.text-phishing {
+        background: #ffebee;
+        border-left: 4px solid #e53935;
+        color: #b71c1c;
+      }
+      #text-result-card.text-safe {
+        background: #e8f5e9;
+        border-left: 4px solid #43a047;
+        color: #2e7d32;
+      }
+      #text-result-card.text-idle {
+        background: #f5f5f5;
+        border-left: 4px solid #bdbdbd;
+        color: #757575;
+        font-style: italic;
+      }
+      .text-preview {
+        font-size: 11px;
+        opacity: 0.75;
+        margin-top: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 260px;
+      }
+      .confidence-bar-wrap {
+        margin-top: 5px;
+        background: rgba(0,0,0,0.08);
+        border-radius: 4px;
+        height: 5px;
+        overflow: hidden;
+      }
+      .confidence-bar-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.4s ease;
+      }
+      .text-history-entry {
+        padding: 8px 10px;
+        margin: 4px 0;
+        border-radius: 4px;
+        background: #f9f9f9;
+        font-size: 12px;
+      }
+      .text-history-entry.text-phishing { border-left: 3px solid #e53935; }
+      .text-history-entry.text-safe     { border-left: 3px solid #43a047; }
+      .text-history-entry .th-preview   { color: #555; margin-top: 2px; font-style: italic; }
+      .text-history-entry .th-time      { color: #aaa; font-size: 10px; }
+
+      /* Tab switcher */
+      .tab-bar {
+        display: flex;
+        border-bottom: 2px solid #e0e0e0;
+        margin: 6px 0 0;
+      }
+      .tab-btn {
+        flex: 1;
+        background: none;
+        border: none;
+        padding: 6px 4px;
+        font-size: 12px;
+        cursor: pointer;
+        color: #888;
+        font-family: Arial, sans-serif;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+      }
+      .tab-btn.active {
+        color: #1565c0;
+        border-bottom: 2px solid #1565c0;
+        font-weight: bold;
+      }
+      .tab-panel { display: none; }
+      .tab-panel.active { display: block; }
     </style>
   </head>
   <body>
-    <h3>🛡️ PhishShield — URL Checker</h3>
+    <h3>🛡️ PhishShield</h3>
 
-    <div id="currentStatus">
-      <div id="loading" style="display: none; margin-top: 10px">
-        ⏳ Scanning...
-      </div>
-      <div id="result" style="margin-top: 10px"></div>
+    <!-- ── Tab bar ────────────────────────────────────────── -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="url-tab">🔗 URL Check</button>
+      <button class="tab-btn"        data-tab="text-tab">📝 Text Check</button>
     </div>
 
-    <hr />
-    <h4>📜 Recent Scans</h4>
-    <div id="history"></div>
+    <!-- ══════════════════════════════════════════════════════
+         TAB 1: URL Detection (ORIGINAL — UNCHANGED)
+    ══════════════════════════════════════════════════════ -->
+    <div id="url-tab" class="tab-panel active">
+      <div id="currentStatus">
+        <div id="loading" style="display: none; margin-top: 10px">⏳ Scanning...</div>
+        <div id="result" style="margin-top: 10px"></div>
+      </div>
+      <hr />
+      <h4>📜 Recent URL Scans</h4>
+      <div id="history"></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════
+         TAB 2: Text Detection (NEW)
+         Shows result of last highlighted-text scan
+    ══════════════════════════════════════════════════════ -->
+    <div id="text-tab" class="tab-panel">
+      <div id="text-scan-section">
+        <h4>🖊️ Last Highlighted Text</h4>
+        <div id="text-result-card" class="text-idle">
+          No text scanned yet.<br>
+          <small>Highlight text on any supported social media page to analyse it.</small>
+        </div>
+
+        <hr style="margin: 10px 0;" />
+        <h4>📜 Recent Text Scans</h4>
+        <div id="text-history"></div>
+      </div>
+    </div>
 
     <script src="popup.js"></script>
   </body>
