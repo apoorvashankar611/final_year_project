@@ -1,4 +1,4 @@
-//=====================================================
+// ============================================================
 // PhishShield Extension — text_detector.js
 // FIXED:
 //   - Now calls port 8000 (merged FastAPI), NOT port 5000
@@ -12,7 +12,7 @@
 
   // ── Config ────────────────────────────────────────────────
   // ✅ FIXED: port changed from 5000 → 8000 (merged backend)
-const TEXT_API_URL = "http://127.0.0.1:8000/predict-text";
+  const TEXT_API_URL    = "http://127.0.0.1:8000/predict-text";
   const MIN_TEXT_LENGTH = 20;
   const MAX_TEXT_LENGTH = 5000;
   const BADGE_LIFETIME_MS = 9000;
@@ -23,6 +23,9 @@ const TEXT_API_URL = "http://127.0.0.1:8000/predict-text";
   let debounceTimer    = null;
   let activeBadge      = null;
   let activeController = null;   // AbortController for in-flight request
+
+  // ── Remove any stale badge left from a previous failed attempt ──
+  document.querySelectorAll("#phishshield-text-badge").forEach(el => el.remove());
 
   // ── Mouseup listener (debounced) ─────────────────────────
   document.addEventListener("mouseup", () => {

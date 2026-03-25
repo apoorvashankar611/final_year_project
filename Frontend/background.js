@@ -12,9 +12,59 @@ const tabStates      = new Map();
 const MAX_HISTORY_ITEMS = 10;
 
 const SOCIAL_MEDIA_DOMAINS = [
-  "facebook.com", "instagram.com", "twitter.com", "x.com",
-  "linkedin.com", "youtube.com", "tiktok.com", "pinterest.com",
-  "snapchat.com", "reddit.com", "fake.facebook.com",
+  "facebook.com",
+  "instagram.com",
+  "twitter.com",
+  "x.com",
+  "linkedin.com",
+  "youtube.com",
+  "tiktok.com",
+  "pinterest.com",
+  "snapchat.com",
+  "reddit.com",
+  "fake.facebook.com",
+  // Added: Most used social media platforms in India
+  "whatsapp.com",
+  "web.whatsapp.com",
+  "telegram.org",
+  "web.telegram.org",
+  "discord.com",
+  "sharechat.com",
+  "moj.tv",
+  "josh.app",
+  "roposo.com",
+  "quora.com",
+  // Add more social media platforms here as needed
+];
+
+// ============================================================
+// ALWAYS SAFE DOMAINS
+// These are verified real social media platforms.
+// They skip ML analysis entirely and are marked safe directly
+// to avoid false positives from the ML model.
+// e.g. linkedin.com was incorrectly flagged as phishing
+// ============================================================
+const ALWAYS_SAFE_DOMAINS = [
+  "linkedin.com",
+  "instagram.com",
+  "facebook.com",
+  "twitter.com",
+  "x.com",
+  "youtube.com",
+  "tiktok.com",
+  "whatsapp.com",
+  "web.whatsapp.com",
+  "telegram.org",
+  "web.telegram.org",
+  "snapchat.com",
+  "reddit.com",
+  "discord.com",
+  "pinterest.com",
+  "quora.com",
+  "sharechat.com",
+  "moj.tv",
+  "josh.app",
+  "roposo.com",
 ];
 
 function isSocialMediaUrl(url) {
@@ -80,7 +130,7 @@ function injectPopup(tabId, url, isPhishing, isSamePage = false, notSocialMedia 
     chrome.scripting.executeScript({
       target: { tabId },
       func: (h) => {
-        ["phishing-warning-popup","safe-url-indicator","same-page-indicator","not-social-indicator"]
+        ["phishing-warning-popup","safe-url-indicator","same-page-indicator","not-social-indicator","text-scan-badge"]
           .forEach(id => document.getElementById(id)?.remove());
         const el = document.createElement("div");
         el.innerHTML = h;
@@ -125,6 +175,7 @@ function injectPopup(tabId, url, isPhishing, isSamePage = false, notSocialMedia 
       target: { tabId },
       func: (h) => {
         document.getElementById("phishing-warning-popup")?.remove();
+        document.getElementById("text-scan-badge")?.remove();
         const p = document.createElement("div"); p.innerHTML = h;
         document.body.appendChild(p);
         document.getElementById("close-popup-btn")?.addEventListener("click", () => p.remove());
@@ -154,7 +205,7 @@ function injectPopup(tabId, url, isPhishing, isSamePage = false, notSocialMedia 
     chrome.scripting.executeScript({
       target: { tabId },
       func: (h) => {
-        ["phishing-warning-popup","safe-url-indicator","same-page-indicator"]
+        ["phishing-warning-popup","safe-url-indicator","same-page-indicator","not-social-indicator","text-scan-badge"]
           .forEach(id => document.getElementById(id)?.remove());
         const el = document.createElement("div"); el.innerHTML = h;
         document.body.appendChild(el);
@@ -182,7 +233,7 @@ function injectPopup(tabId, url, isPhishing, isSamePage = false, notSocialMedia 
     chrome.scripting.executeScript({
       target: { tabId },
       func: (h) => {
-        ["phishing-warning-popup","safe-url-indicator","same-page-indicator"]
+        ["phishing-warning-popup","safe-url-indicator","same-page-indicator","not-social-indicator","text-scan-badge"]
           .forEach(id => document.getElementById(id)?.remove());
         const el = document.createElement("div"); el.innerHTML = h;
         document.body.appendChild(el);
@@ -197,7 +248,7 @@ function injectPopup(tabId, url, isPhishing, isSamePage = false, notSocialMedia 
   }
 }
 
-// ── checkForPhishing — FIXED: proper timeout handling ────────
+// ── checkForPhishing — FIXED: proper timeout + always safe domains ──
 async function checkForPhishing(url, tabId, isReload = false) {
   try {
     if (!url || url.startsWith("chrome://") || url.startsWith("edge://") || url.startsWith("about:"))
@@ -208,6 +259,25 @@ async function checkForPhishing(url, tabId, isReload = false) {
     if (!isSocialMediaUrl(url)) {
       injectPopup(tabId, url, false, false, true, false);
       return { url, notSocialMedia: true };
+    }
+
+    // ----------------------------------------------------------
+    // ALWAYS SAFE DOMAINS CHECK
+    // These are verified real social media platforms.
+    // Skip ML model entirely to avoid false positives.
+    // e.g. linkedin.com was incorrectly flagged by ML model
+    // ----------------------------------------------------------
+    const isAlwaysSafe = ALWAYS_SAFE_DOMAINS.some((d) => domain.includes(d));
+    if (isAlwaysSafe) {
+      const result = {
+        url,
+        isPhishing:  false,
+        aiSuspicion: false,
+        timestamp:   new Date().toLocaleString(),
+      };
+      storeScanHistory(result);
+      injectPopup(tabId, url, false, false, false, false);
+      return result;
     }
 
     const history = await new Promise((resolve) =>
