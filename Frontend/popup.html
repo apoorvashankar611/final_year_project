@@ -6,11 +6,11 @@
     <link rel="stylesheet" href="styles.css" />
     <style>
       /* =====================================================
-       REQUIREMENT 4: Styles for all 3 result states
-       ===================================================== */
+         Styles for URL and Image Results
+      ===================================================== */
 
       /* Shared base for result cards */
-      #result > div {
+      #result > div, #imageResult {
         padding: 12px 14px;
         border-radius: 6px;
         font-family: Arial, sans-serif;
@@ -19,75 +19,30 @@
         margin-top: 10px;
       }
 
-      /* STATE 1: Not a social media website */
-      .not-social {
-        background: #eceff1;
-        border-left: 4px solid #607d8b;
-        color: #37474f;
-      }
+      /* URL states */
+      .not-social { background: #eceff1; border-left: 4px solid #607d8b; color: #37474f; }
+      .safe       { background: #e8f5e9; border-left: 4px solid #4caf50; color: #2e7d32; }
+      .phishing   { background: #ffebee; border-left: 4px solid #ff4444; color: #b71c1c; }
+      .error      { background: #fff3e0; border-left: 4px solid #ff9800; color: #e65100; }
 
-      /* STATE 2: Safe social media website */
-      .safe {
-        background: #e8f5e9;
-        border-left: 4px solid #4caf50;
-        color: #2e7d32;
+      /* Image result states */
+      #imageResult {
+        font-weight: bold;
+        text-align: center;
       }
+      #imageResult.real { background-color: #5cb85c; color: #fff; }
+      #imageResult.ai   { background-color: #f0ad4e; color: #fff; }
+      #imageResult.error{ background-color: #d9534f; color: #fff; }
 
-      /* STATE 3: Phishing website detected */
-      .phishing {
-        background: #ffebee;
-        border-left: 4px solid #ff4444;
-        color: #b71c1c;
-      }
-
-      /* Generic error state */
-      .error {
-        background: #fff3e0;
-        border-left: 4px solid #ff9800;
-        color: #e65100;
-        padding: 12px 14px;
-        border-radius: 6px;
-        font-size: 13px;
-        margin-top: 10px;
-      }
-
-      /* =====================================================
-       History list styles
-       ===================================================== */
-      .history-entry {
-        padding: 10px;
-        margin: 5px 0;
-        border-radius: 4px;
-        background: #f5f5f5;
-      }
-      .history-entry.phishing {
-        border-left: 4px solid #ff4444;
-      }
-      .history-entry.safe {
-        border-left: 4px solid #4caf50;
-      }
-      /* NEW: style for not-social entries in history */
-      .history-entry.not-social {
-        border-left: 4px solid #607d8b;
-      }
-      .history-entry .url {
-        color: #666;
-        font-size: 12px;
-        word-break: break-all;
-      }
-      .history-entry .time {
-        color: #999;
-        font-size: 11px;
-      }
-      .report-link {
-        color: #ff4444;
-        text-decoration: none;
-        font-size: 12px;
-        margin-left: 5px;
-      }
-      .report-link:hover {
-        text-decoration: underline;
-      }
+      /* History list */
+      .history-entry { padding: 10px; margin: 5px 0; border-radius: 4px; background: #f5f5f5; }
+      .history-entry.phishing { border-left: 4px solid #ff4444; }
+      .history-entry.safe     { border-left: 4px solid #4caf50; }
+      .history-entry.not-social { border-left: 4px solid #607d8b; }
+      .history-entry .url { color: #666; font-size: 12px; word-break: break-all; }
+      .history-entry .time { color: #999; font-size: 11px; }
+      .report-link { color: #ff4444; text-decoration: none; font-size: 12px; margin-left: 5px; }
+      .report-link:hover { text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -98,6 +53,7 @@
         ⏳ Scanning...
       </div>
       <div id="result" style="margin-top: 10px"></div>
+      <div id="imageResult" style="margin-top: 10px">No image scanned yet</div>
     </div>
 
     <hr />
@@ -105,5 +61,37 @@
     <div id="history"></div>
 
     <script src="popup.js"></script>
+    <script>
+  const imageResultDiv = document.getElementById("imageResult");
+
+  function displayResult(result) {
+    if (!result) {
+      imageResultDiv.textContent = "No image scanned yet";
+      imageResultDiv.className = "";
+      return;
+    }
+
+    imageResultDiv.textContent =
+      `Prediction: ${result.prediction} | Confidence: ${result.confidence}%`;
+
+    if (result.prediction === "Real") {
+      imageResultDiv.className = "real";
+    } else {
+      imageResultDiv.className = "ai";
+    }
+  }
+
+  // Load result when popup opens
+  chrome.storage.local.get(["lastImageScan"], (res) => {
+    displayResult(res.lastImageScan);
+  });
+
+  // Optional: auto-refresh if new scan happens
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.lastImageScan) {
+      displayResult(changes.lastImageScan.newValue);
+    }
+  });
+</script>
   </body>
 </html>
