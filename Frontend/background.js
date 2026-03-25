@@ -1,6 +1,9 @@
 // ============================================================
 // PhishShield Extension - background.js
-// MODIFIED FOR: Social Media Filtering (Req 1), Improved Output (Req 4)
+// MODIFIED FOR:
+// 1. Social Media Filtering
+// 2. Improved Output
+// 3. Right-click Image Scan Feature
 // ============================================================
 
 // Store information about each tab's state
@@ -10,7 +13,6 @@ const MAX_HISTORY_ITEMS = 10; // Maximum number of scan history items to keep
 // ============================================================
 // REQUIREMENT 1: SOCIAL MEDIA PLATFORM FILTER
 // Only URLs belonging to these domains will be analyzed.
-// To add more platforms in the future, simply add them here.
 // ============================================================
 const SOCIAL_MEDIA_DOMAINS = [
   "facebook.com",
@@ -24,51 +26,25 @@ const SOCIAL_MEDIA_DOMAINS = [
   "snapchat.com",
   "reddit.com",
   "fake.facebook.com",
-  // Added: Most used social media platforms in India
-  "whatsapp.com",
-  "web.whatsapp.com",
-  "telegram.org",
-  "web.telegram.org",
-  "discord.com",
-  "sharechat.com",
-  "moj.tv",
-  "josh.app",
-  "roposo.com",
-  "quora.com",
-  // Add more social media platforms here as needed
 ];
 
 // ============================================================
-// ALWAYS SAFE DOMAINS
-// These are verified real social media platforms.
-// They skip ML analysis entirely and are marked safe directly
-// to avoid false positives from the ML model.
-// e.g. linkedin.com was incorrectly flagged as phishing
+// EXTENSION INSTALL SETUP
+// Creates right-click context menu for image scanning
 // ============================================================
-const ALWAYS_SAFE_DOMAINS = [
-  "linkedin.com",
-  "instagram.com",
-  "facebook.com",
-  "twitter.com",
-  "x.com",
-  "youtube.com",
-  "tiktok.com",
-  "whatsapp.com",
-  "web.whatsapp.com",
-  "telegram.org",
-  "web.telegram.org",
-  "snapchat.com",
-  "reddit.com",
-  "discord.com",
-  "pinterest.com",
-  "quora.com",
-];
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "scanImage",
+    title: "Scan this image",
+    contexts: ["image"],
+  });
+});
 
 /**
  * Checks whether a given URL belongs to a supported social media platform.
- * Matches both exact domains and subdomains (e.g., m.facebook.com).
+ * Matches both exact domains and subdomains.
  * @param {string} url - The full URL to check
- * @returns {boolean} - true if it's a social media site
+ * @returns {boolean}
  */
 function isSocialMediaUrl(url) {
   try {
@@ -97,13 +73,11 @@ function storeScanHistory(result) {
     history.unshift({
       url: result.url,
       isPhishing: result.isPhishing,
-      // NEW: store ai_generated_suspicion flag in history
       aiSuspicion: result.aiSuspicion || false,
       timestamp: new Date().toLocaleString(),
       reported: false,
     });
 
-    // Keep only the last 10 items
     if (history.length > MAX_HISTORY_ITEMS) {
       history.pop();
     }
@@ -112,23 +86,14 @@ function storeScanHistory(result) {
   });
 }
 
-// ============================================================
-// REQUIREMENT 4: IMPROVED EXTENSION OUTPUT
-// injectPopup now handles 4 states:
-//   1. notSocialMedia  → "Not a social media website"
-//   2. isPhishing      → "Phishing website detected"
-//   3. isSamePage      → "Same Website" (unchanged UX)
-//   4. safe            → "Safe social media website"
-// ============================================================
-
 /**
  * Injects a visual indicator into the active webpage tab.
  * @param {number} tabId
  * @param {string} url
  * @param {boolean} isPhishing
  * @param {boolean} isSamePage
- * @param {boolean} notSocialMedia - true when URL is not a social media site
- * @param {boolean} aiSuspicion    - true when AI-generated phishing is suspected
+ * @param {boolean} notSocialMedia
+ * @param {boolean} aiSuspicion
  */
 function injectPopup(
   tabId,
@@ -140,9 +105,6 @@ function injectPopup(
 ) {
   const hostname = new URL(url).hostname;
 
-  // ----------------------------------------------------------
-  // STATE 1: NOT A SOCIAL MEDIA WEBSITE
-  // ----------------------------------------------------------
   if (notSocialMedia) {
     const notSocialHTML = `
       <div id="not-social-indicator" style="
@@ -205,11 +167,7 @@ function injectPopup(
     return;
   }
 
-  // ----------------------------------------------------------
-  // STATE 2: PHISHING WEBSITE DETECTED
-  // ----------------------------------------------------------
   if (isPhishing) {
-    // Build an extra badge if AI-generated suspicion is flagged
     const aiBadge = aiSuspicion
       ? `<div style="
           background: rgba(255,255,255,0.2);
@@ -285,10 +243,6 @@ function injectPopup(
       },
       args: [popupHTML],
     });
-
-    // ----------------------------------------------------------
-    // STATE 3: SAME PAGE NAVIGATION (unchanged)
-    // ----------------------------------------------------------
   } else if (isSamePage) {
     const samePageHTML = `
       <div id="same-page-indicator" style="
@@ -332,10 +286,6 @@ function injectPopup(
       },
       args: [samePageHTML],
     });
-
-    // ----------------------------------------------------------
-    // STATE 4: SAFE SOCIAL MEDIA WEBSITE
-    // ----------------------------------------------------------
   } else {
     const tickHTML = `
       <div id="safe-url-indicator" style="
@@ -399,11 +349,9 @@ function injectPopup(
 
 // ============================================================
 // MAIN PHISHING CHECK FUNCTION
-// Now includes: social media gate + AI suspicion display
 // ============================================================
 async function checkForPhishing(url, tabId, isReload = false) {
   try {
-    // Skip internal browser pages
     if (
       !url ||
       url.startsWith("chrome://") ||
@@ -415,38 +363,11 @@ async function checkForPhishing(url, tabId, isReload = false) {
 
     const domain = getDomain(url);
 
-    // ----------------------------------------------------------
-    // REQUIREMENT 1: SOCIAL MEDIA FILTER
-    // If the URL is not a social media platform, show the
-    // "Not a social media website" message and stop here.
-    // ----------------------------------------------------------
     if (!isSocialMediaUrl(url)) {
-      injectPopup(tabId, url, false, false, true, false); // notSocialMedia = true
+      injectPopup(tabId, url, false, false, true, false);
       return { url, notSocialMedia: true };
     }
 
-    // ----------------------------------------------------------
-    // ALWAYS SAFE DOMAINS CHECK
-    // These are verified real social media platforms.
-    // Skip ML model entirely to avoid false positives.
-    // e.g. linkedin.com was incorrectly flagged by ML model
-    // ----------------------------------------------------------
-    const isAlwaysSafe = ALWAYS_SAFE_DOMAINS.some((d) => domain.includes(d));
-    if (isAlwaysSafe) {
-      const result = {
-        url,
-        isPhishing: false,
-        aiSuspicion: false,
-        timestamp: new Date().toLocaleString(),
-      };
-      storeScanHistory(result);
-      injectPopup(tabId, url, false, false, false, false);
-      return result;
-    }
-
-    // ===================================================
-    // SAME DOMAIN CHECK LOGIC (unchanged from original)
-    // ===================================================
     const history = await new Promise((resolve) => {
       chrome.storage.local.get(["scanHistory"], (res) => {
         resolve(res.scanHistory || []);
@@ -470,9 +391,7 @@ async function checkForPhishing(url, tabId, isReload = false) {
         return history[0];
       }
     }
-    // ===================================================
 
-    // Send URL to backend for ML-based phishing detection
     const response = await fetch("http://127.0.0.1:8000/predict_url", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -482,10 +401,7 @@ async function checkForPhishing(url, tabId, isReload = false) {
     if (!response.ok) throw new Error(`Status ${response.status}`);
     const data = await response.json();
 
-    // prediction === 0 means Phishing (matches original logic)
     const isPhishing = data.prediction === 0;
-
-    // REQUIREMENT 2: Read the AI suspicion flag from backend response
     const aiSuspicion = data.ai_generated_suspicion === true;
 
     tabStates.set(tabId, { domain, previousUrl: url });
@@ -507,7 +423,140 @@ async function checkForPhishing(url, tabId, isReload = false) {
   }
 }
 
-// Debounce helper — limits how often we trigger checks on rapid navigations
+// ============================================================
+// IMAGE SCAN HANDLER - Right-click menu
+// FIX: background service worker fetches the image directly
+// using its own elevated permissions (host_permissions: <all_urls>)
+// No canvas, no page-context fetch — avoids CORS entirely.
+// ============================================================
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== "scanImage") return;
+
+  const srcUrl = info.srcUrl;
+  if (!srcUrl) return;
+
+  // Show "scanning" indicator immediately
+  chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      document.getElementById("ai-scan-popup")?.remove();
+      const popup = document.createElement("div");
+      popup.id = "ai-scan-popup";
+      popup.textContent = "⏳ Scanning image...";
+      Object.assign(popup.style, {
+        position: "fixed", top: "20px", right: "20px",
+        backgroundColor: "#444", color: "#fff",
+        padding: "12px 16px", borderRadius: "8px",
+        zIndex: "2147483647", fontSize: "14px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+        fontFamily: "Arial, sans-serif",
+      });
+      document.body.appendChild(popup);
+    },
+  });
+
+  try {
+    // The service worker fetches the image with its own elevated permissions.
+    // host_permissions: ["<all_urls>"] in manifest.json allows this,
+    // and service workers are not subject to CORS restrictions the same way pages are.
+    const imageResponse = await fetch(srcUrl);
+    if (!imageResponse.ok) throw new Error(`Could not fetch image (HTTP ${imageResponse.status})`);
+
+    const blob = await imageResponse.blob();
+
+    // Convert blob → base64 using FileReader inside an injected script,
+    // then send back to background via message.
+    // (Service workers don't have FileReader, but we can use a workaround with arrayBuffer)
+    const arrayBuffer = await blob.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const binary = uint8Array.reduce((acc, byte) => acc + String.fromCharCode(byte), "");
+    const base64 = `data:${blob.type || "image/jpeg"};base64,` + btoa(binary);
+
+    // Send base64 image to backend
+    const backendResponse = await fetch("http://127.0.0.1:8000/predict_image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: base64 }),
+    });
+
+    if (!backendResponse.ok) throw new Error(`Backend error (HTTP ${backendResponse.status})`);
+    const data = await backendResponse.json();
+    if (data.error) throw new Error(data.error);
+
+    // Save to storage so popup panel can also display it
+    chrome.storage.local.set({
+      lastImageScan: {
+        prediction: data.prediction,
+        confidence: data.confidence,
+        timestamp: new Date().toLocaleString(),
+      },
+    });
+
+    // Inject result popup into page
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (result) => {
+        document.getElementById("ai-scan-popup")?.remove();
+        const isAI = result.prediction === "AI Generated";
+        const popup = document.createElement("div");
+        popup.id = "ai-scan-popup";
+        popup.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <strong style="font-size:15px;">${isAI ? "🤖 AI Generated" : "✅ Real Image"}</strong>
+            <button id="close-img-popup" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;padding:0 0 0 12px;">×</button>
+          </div>
+          <div style="font-size:13px;opacity:0.9;">Confidence: ${result.confidence}%</div>
+        `;
+        Object.assign(popup.style, {
+          position: "fixed", top: "20px", right: "20px",
+          backgroundColor: isAI ? "#e67e22" : "#27ae60",
+          color: "#fff", padding: "14px 16px", borderRadius: "8px",
+          zIndex: "2147483647", fontSize: "14px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+          fontFamily: "Arial, sans-serif", minWidth: "200px",
+        });
+        document.body.appendChild(popup);
+        document.getElementById("close-img-popup")
+          ?.addEventListener("click", () => popup.remove());
+        setTimeout(() => popup.remove(), 8000);
+      },
+      args: [{ prediction: data.prediction, confidence: data.confidence }],
+    });
+
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icons/icon48.png",
+      title: "📸 Image Scan Result",
+      message: `${data.prediction} — Confidence: ${data.confidence}%`,
+    });
+
+  } catch (err) {
+    console.error("Image scan error:", err);
+
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (msg) => {
+        document.getElementById("ai-scan-popup")?.remove();
+        const popup = document.createElement("div");
+        popup.id = "ai-scan-popup";
+        popup.textContent = "❌ Scan failed: " + msg;
+        Object.assign(popup.style, {
+          position: "fixed", top: "20px", right: "20px",
+          backgroundColor: "#c0392b", color: "#fff",
+          padding: "12px 16px", borderRadius: "8px",
+          zIndex: "2147483647", fontSize: "14px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          fontFamily: "Arial, sans-serif",
+        });
+        document.body.appendChild(popup);
+        setTimeout(() => popup.remove(), 6000);
+      },
+      args: [err.message],
+    });
+  }
+});
+
+// Debounce helper
 function debounce(func, wait) {
   let timeout;
   return function executedFunction(...args) {
@@ -562,131 +611,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Cleanup tab states every 30 minutes
-setInterval(
-  () => {
-    tabStates.clear();
-  },
-  30 * 60 * 1000,
-);
-
-// ============================================================
-// NEW FEATURE: Highlighted Text Phishing Detection
-// Listens for text selection on social media pages only
-// ============================================================
-
-// Inject the text selection listener into social media pages
-function injectTextSelectionListener(tabId, url) {
-  // Only run on social media pages
-  if (!isSocialMediaUrl(url)) return;
-
-  chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => {
-      // Avoid injecting multiple times
-      if (window.__phishShieldTextListenerActive) return;
-      window.__phishShieldTextListenerActive = true;
-
-      document.addEventListener("mouseup", () => {
-        const selectedText = window.getSelection().toString().trim();
-
-        // Only check if user selected more than 10 characters
-        if (selectedText.length > 10) {
-          // Send selected text to background script
-          chrome.runtime.sendMessage({
-            action: "checkSelectedText",
-            text: selectedText,
-          });
-        }
-      });
-    },
-  });
-}
-
-// Listen for text check requests from content script
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "checkSelectedText") {
-    // Send selected text to backend for analysis
-    fetch("http://127.0.0.1:8000/predict_text", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: request.text }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        // Store result so popup can read it
-        chrome.storage.local.set({
-          lastTextScan: {
-            text: request.text.substring(0, 100), // store first 100 chars
-            result: data.result,
-            isPhishing: data.is_phishing,
-            matchedKeywords: data.matched_keywords || [],
-            suspiciousPatterns: data.suspicious_patterns || [],
-            timestamp: new Date().toLocaleString(),
-          },
-        });
-
-        // Show inline badge on the page
-        chrome.scripting.executeScript({
-          target: { tabId: sender.tab.id },
-          func: (result, isPhishing) => {
-            // Remove existing text scan badge
-            document.getElementById("text-scan-badge")?.remove();
-
-            const badge = document.createElement("div");
-            badge.id = "text-scan-badge";
-            badge.style.cssText = `
-              position: fixed;
-              bottom: 20px;
-              right: 20px;
-              background: ${isPhishing ? "#ff4444" : "#4CAF50"};
-              color: white;
-              padding: 10px 16px;
-              border-radius: 6px;
-              box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-              z-index: 999999;
-              font-family: Arial, sans-serif;
-              font-size: 14px;
-              max-width: 320px;
-            `;
-            badge.innerHTML = `
-              ${isPhishing ? "⚠️" : "✅"}
-              <strong>Selected Text:</strong>
-              ${isPhishing ? "Phishing detected" : "Looks legitimate"}
-              <button id="close-text-badge" style="
-                background: none; border: none; color: white;
-                font-size: 16px; cursor: pointer;
-                margin-left: 8px; float: right;
-              ">×</button>
-            `;
-            document.body.appendChild(badge);
-
-            document
-              .getElementById("close-text-badge")
-              ?.addEventListener("click", () => badge.remove());
-
-            // Auto remove after 6 seconds
-            setTimeout(() => badge.remove(), 6000);
-          },
-          args: [data.result, data.is_phishing],
-        });
-      })
-      .catch((err) => console.error("Text scan error:", err));
-
-    return true;
-  }
-});
-
-// Inject listener when page loads
-chrome.webNavigation.onCommitted.addListener((details) => {
-  if (details.frameId === 0) {
-    setTimeout(() => {
-      chrome.tabs.get(details.tabId, (tab) => {
-        if (tab.url) injectTextSelectionListener(details.tabId, tab.url);
-      });
-    }, 1000);
-  }
-});
+setInterval(() => {
+  tabStates.clear();
+}, 30 * 60 * 1000);
 
 console.log(
-  "PhishShield background script started — Social Media Filter active",
+  "PhishShield background script started — Social Media Filter + Image Scan active",
 );
