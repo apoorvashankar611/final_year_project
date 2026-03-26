@@ -3,20 +3,18 @@
   "name": "PhishShield",
   "version": "2.0",
   "description": "AI-powered phishing detection for URLs, text, and images across all websites.",
-
   "permissions": [
     "tabs",
     "storage",
     "scripting",
     "notifications",
-    "webNavigation"
+    "webNavigation",
+    "contextMenus"
   ],
-
   "host_permissions": [
     "<all_urls>",
     "http://127.0.0.1:8000/*"
   ],
-
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -24,17 +22,14 @@
       "48": "icons/icon48.png"
     }
   },
-
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png"
   },
-
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
