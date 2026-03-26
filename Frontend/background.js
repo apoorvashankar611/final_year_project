@@ -6,6 +6,7 @@
 //   - checkForPhishing returns a proper error object on timeout
 //   - Text scan handlers unchanged
 //   - All URL detection logic unchanged
+//   - Image scan (AI vs Real) added via right-click context menu
 // ============================================================
 
 const tabStates      = new Map();
@@ -66,6 +67,18 @@ const ALWAYS_SAFE_DOMAINS = [
   "josh.app",
   "roposo.com",
 ];
+
+// ============================================================
+// EXTENSION INSTALL SETUP
+// Creates right-click context menu for image scanning
+// ============================================================
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "scanImage",
+    title: "Scan this image",
+    contexts: ["image"],
+  });
+});
 
 function isSocialMediaUrl(url) {
   try {
@@ -341,6 +354,146 @@ async function checkForPhishing(url, tabId, isReload = false) {
   }
 }
 
+// ============================================================
+// IMAGE SCAN HANDLER - Right-click context menu
+// Service worker fetches the image directly using its elevated
+// host_permissions — avoids CORS restrictions entirely.
+// ============================================================
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== "scanImage") return;
+
+  const srcUrl = info.srcUrl;
+  if (!srcUrl) return;
+
+  // Show "scanning" indicator immediately
+  chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      document.getElementById("ai-scan-popup")?.remove();
+      const popup = document.createElement("div");
+      popup.id = "ai-scan-popup";
+      popup.textContent = "⏳ Scanning image...";
+      Object.assign(popup.style, {
+        position: "fixed", top: "20px", right: "20px",
+        backgroundColor: "#444", color: "#fff",
+        padding: "12px 16px", borderRadius: "8px",
+        zIndex: "2147483647", fontSize: "14px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+        fontFamily: "Arial, sans-serif",
+      });
+      document.body.appendChild(popup);
+    },
+  });
+
+  try {
+    // Fetch image in service worker — no CORS issue due to host_permissions
+    const imageResponse = await fetch(srcUrl);
+    if (!imageResponse.ok) throw new Error(`Could not fetch image (HTTP ${imageResponse.status})`);
+
+    const blob        = await imageResponse.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const uint8Array  = new Uint8Array(arrayBuffer);
+    const binary      = uint8Array.reduce((acc, byte) => acc + String.fromCharCode(byte), "");
+    const base64      = `data:${blob.type || "image/jpeg"};base64,` + btoa(binary);
+
+    // Send base64 to backend
+    const backendResponse = await fetch("http://127.0.0.1:8000/predict_image", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ image_base64: base64 }),
+    });
+
+    if (!backendResponse.ok) throw new Error(`Backend error (HTTP ${backendResponse.status})`);
+    const data = await backendResponse.json();
+    if (data.error) throw new Error(data.error);
+
+    // Save to storage so popup panel can also display it
+    chrome.storage.local.set({
+      lastImageScan: {
+        prediction: data.prediction,
+        confidence: data.confidence,
+        timestamp:  new Date().toLocaleString(),
+      },
+    });
+
+    // Inject result popup into page
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (result) => {
+        document.getElementById("ai-scan-popup")?.remove();
+        const isAI  = result.prediction === "AI Generated";
+        const popup = document.createElement("div");
+        popup.id    = "ai-scan-popup";
+        popup.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <strong style="font-size:15px;">${isAI ? "🤖 AI Generated" : "✅ Real Image"}</strong>
+            <button id="close-img-popup" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;padding:0 0 0 12px;">×</button>
+          </div>
+          <div style="font-size:13px;opacity:0.9;">Confidence: ${result.confidence}%</div>
+        `;
+        Object.assign(popup.style, {
+          position:        "fixed",
+          top:             "20px",
+          right:           "20px",
+          backgroundColor: isAI ? "#e67e22" : "#27ae60",
+          color:           "#fff",
+          padding:         "14px 16px",
+          borderRadius:    "8px",
+          zIndex:          "2147483647",
+          fontSize:        "14px",
+          boxShadow:       "0 4px 12px rgba(0,0,0,0.35)",
+          fontFamily:      "Arial, sans-serif",
+          minWidth:        "200px",
+        });
+        document.body.appendChild(popup);
+        document.getElementById("close-img-popup")
+          ?.addEventListener("click", () => popup.remove());
+        setTimeout(() => popup.remove(), 8000);
+      },
+      args: [{ prediction: data.prediction, confidence: data.confidence }],
+    });
+
+    chrome.notifications.create({
+      type:     "basic",
+      iconUrl:  "icons/icon48.png",
+      title:    "📸 Image Scan Result",
+      message:  `${data.prediction} — Confidence: ${data.confidence}%`,
+    });
+
+  } catch (err) {
+    console.error("Image scan error:", err);
+
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (msg) => {
+        document.getElementById("ai-scan-popup")?.remove();
+        const popup = document.createElement("div");
+        popup.id = "ai-scan-popup";
+        popup.textContent = "❌ Scan failed: " + msg;
+        Object.assign(popup.style, {
+          position:        "fixed",
+          top:             "20px",
+          right:           "20px",
+          backgroundColor: "#c0392b",
+          color:           "#fff",
+          padding:         "12px 16px",
+          borderRadius:    "8px",
+          zIndex:          "2147483647",
+          fontSize:        "14px",
+          boxShadow:       "0 2px 8px rgba(0,0,0,0.3)",
+          fontFamily:      "Arial, sans-serif",
+        });
+        document.body.appendChild(popup);
+        setTimeout(() => popup.remove(), 6000);
+      },
+      args: [err.message],
+    });
+  }
+});
+
+// ============================================================
+// NAVIGATION LISTENERS
+// ============================================================
 function debounce(func, wait) {
   let timeout;
   return function (...args) {
@@ -370,8 +523,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (!tabs[0]) { sendResponse({ error: "No active tab" }); return; }
 
       // ── FIXED: 16 s safety timeout on the popup side ─────
-      // If checkForPhishing takes longer than 16 s for any reason,
-      // sendResponse is still called so the popup never freezes.
       const safetyTimer = setTimeout(() => {
         sendResponse({ error: "Scan timed out — backend may be slow or unreachable" });
       }, 16000);
@@ -385,7 +536,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ error: e.message });
       }
     });
-    return true;   // keep channel open for async sendResponse
+    return true;
 
   } else if (request.action === "getHistory") {
     chrome.storage.local.get(["scanHistory"], (res) => sendResponse(res.scanHistory || []));
@@ -406,4 +557,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 setInterval(() => tabStates.clear(), 30 * 60 * 1000);
 
-console.log("PhishShield background started — URL + Text detection, single backend port 8000");
+console.log("PhishShield background started — URL + Text + Image detection, single backend port 8000");

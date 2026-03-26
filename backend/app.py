@@ -1,10 +1,12 @@
 # ============================================================
-# PhishShield Backend — FINAL (URL + TEXT WORKING)
+# PhishShield Backend — FINAL (URL + TEXT + IMAGE WORKING)
 # ============================================================
 
 import pickle
 import re
+import base64
 import joblib
+import numpy as np
 import xgboost as xgb
 import pandas as pd
 
@@ -12,6 +14,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from io import BytesIO
+from PIL import Image
 
 from url_feature_extractor import URLFeatureExtractor
 
@@ -53,10 +57,27 @@ try:
     text_model = pickle.load(open("model/lr_final_model.pkl", "rb"))
     tfidf = pickle.load(open("model/transformer.pkl", "rb"))
     TEXT_LOADED = True
-    print("✅ Text model loaded")
+    print(" Text model loaded")
 except Exception as e:
     TEXT_LOADED = False
-    print("❌ Text model failed:", e)
+    print(" Text model failed:", e)
+
+# ============================================================
+# LOAD IMAGE AI-DETECTION MODELS
+# ============================================================
+
+try:
+    svm = joblib.load("model/svm.pkl")
+    rf  = joblib.load("model/rf.pkl")
+    lr  = joblib.load("model/lr.pkl")
+    gb  = joblib.load("model/gb.pkl")
+    IMAGE_LOADED = True
+    print(" Image models loaded")
+except Exception as e:
+    IMAGE_LOADED = False
+    print(" Image models failed:", e)
+
+IMG_SIZE = (32, 32)
 
 # ============================================================
 # SCHEMAS
@@ -68,12 +89,43 @@ class URLInput(BaseModel):
 class TextInput(BaseModel):
     text: str
 
+class ImageInput(BaseModel):
+    image_base64: str
+
+# ============================================================
+# IMAGE HELPER FUNCTIONS
+# ============================================================
+
+def decode_base64_image(image_base64: str):
+    if "," in image_base64:
+        image_base64 = image_base64.split(",")[1]
+    image_bytes = base64.b64decode(image_base64)
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    return img
+
+def extract_image_features(img: Image.Image):
+    img = img.resize(IMG_SIZE)
+    img_array = np.array(img, dtype=np.float32) / 255.0
+
+    flat_pixels   = img_array.flatten()
+    channel_mean  = img_array.mean(axis=(0, 1))
+    channel_std   = img_array.std(axis=(0, 1))
+
+    gray = np.mean(img_array, axis=2)
+    gray_stats = np.array([
+        gray.mean(), gray.std(), gray.min(), gray.max()
+    ], dtype=np.float32)
+
+    features = np.concatenate([flat_pixels, channel_mean, channel_std, gray_stats])
+    return features.reshape(1, -1)
+
 # ============================================================
 # HEALTH
 # ============================================================
+
 @app.get("/")
 def home():
-    return {"message": "PhishShield Backend Running 🚀"}  
+    return {"message": "PhishShield Backend Running"}
 
 @app.get("/health")
 def health():
@@ -87,15 +139,14 @@ def health():
 def predict_url(data: URLInput):
     try:
         extractor = URLFeatureExtractor(data.url)
-        features = extractor.extract_model_features()
+        features  = extractor.extract_model_features()
 
-        df = pd.DataFrame([features], columns=FEATURE_COLUMNS)
+        df     = pd.DataFrame([features], columns=FEATURE_COLUMNS)
         scaled = scaler.transform(df)
 
         dmatrix = xgb.DMatrix(scaled, feature_names=FEATURE_COLUMNS)
-        pred = booster.predict(dmatrix)
-
-        label = int(round(pred[0]))
+        pred    = booster.predict(dmatrix)
+        label   = int(round(pred[0]))
 
         return {
             "prediction": label,
@@ -116,12 +167,11 @@ def predict_text(data: TextInput):
         return {"error": "Text model not loaded"}
 
     text = data.text.strip()
-
     if not text:
         return {"error": "Empty text"}
 
     try:
-        X = tfidf.transform([text])
+        X    = tfidf.transform([text])
         pred = int(text_model.predict(X)[0])
 
         try:
@@ -131,9 +181,59 @@ def predict_text(data: TextInput):
 
         return {
             "prediction": pred,
-            "result": "Phishing" if pred == 1 else "Safe",
+            "result":     "Phishing" if pred == 1 else "Safe",
             "confidence": round(float(prob), 3)
         }
 
     except Exception as e:
         return {"error": str(e)}
+
+# ============================================================
+# IMAGE DETECTION (AI-generated vs Real)
+# ============================================================
+
+@app.post("/predict_image")
+def predict_image(input_data: ImageInput):
+
+    if not IMAGE_LOADED:
+        return {
+            "prediction": "Error",
+            "confidence": 0,
+            "error": "Image models not loaded"
+        }
+
+    try:
+        img      = decode_base64_image(input_data.image_base64)
+        features = extract_image_features(img)
+
+        p1 = int(svm.predict(features)[0])
+        p2 = int(rf.predict(features)[0])
+        p3 = int(lr.predict(features)[0])
+        p4 = int(gb.predict(features)[0])
+
+        preds      = [p1, p2, p3, p4]
+        count_ai   = preds.count(1)
+        count_real = preds.count(0)
+
+        # Tie breaker → safer to assume Real
+        final = 1 if count_ai > count_real else 0
+
+        confidence = (max(count_ai, count_real) / len(preds)) * 100
+
+        return {
+            "prediction": "AI Generated" if final == 1 else "Real",
+            "confidence": round(confidence, 2),
+            "votes": {
+                "svm":                 p1,
+                "random_forest":       p2,
+                "logistic_regression": p3,
+                "gradient_boosting":   p4,
+            }
+        }
+
+    except Exception as e:
+        return {
+            "prediction": "Error",
+            "confidence": 0,
+            "error": str(e)
+        }
