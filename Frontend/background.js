@@ -7,6 +7,7 @@
 //   - Text scan handlers unchanged
 //   - All URL detection logic unchanged
 //   - Image scan (AI vs Real) added via right-click context menu
+//   - Steganography detection added alongside image scan  ← NEW
 // ============================================================
 
 const tabStates      = new Map();
@@ -355,9 +356,10 @@ async function checkForPhishing(url, tabId, isReload = false) {
 }
 
 // ============================================================
-// IMAGE SCAN HANDLER - Right-click context menu
+// IMAGE SCAN HANDLER - Right-click context menu        ← REPLACED
 // Service worker fetches the image directly using its elevated
 // host_permissions — avoids CORS restrictions entirely.
+// Runs AI detection + steganography detection in parallel.
 // ============================================================
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "scanImage") return;
@@ -396,23 +398,43 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const binary      = uint8Array.reduce((acc, byte) => acc + String.fromCharCode(byte), "");
     const base64      = `data:${blob.type || "image/jpeg"};base64,` + btoa(binary);
 
-    // Send base64 to backend
-    const backendResponse = await fetch("http://127.0.0.1:8000/predict_image", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ image_base64: base64 }),
-    });
+    // ── Run AI detection + stego detection in parallel ──────
+    const [backendResponse, stegoResponse] = await Promise.all([
+      fetch("http://127.0.0.1:8000/predict_image", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ image_base64: base64 }),
+      }),
+      fetch("http://127.0.0.1:8000/detect_stego", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ image_base64: base64 }),
+      }),
+    ]);
 
     if (!backendResponse.ok) throw new Error(`Backend error (HTTP ${backendResponse.status})`);
     const data = await backendResponse.json();
     if (data.error) throw new Error(data.error);
 
+    // Stego result — fail gracefully if endpoint errors
+    let stegoData = { is_stego: false, result: "Unknown" };
+    try {
+      if (stegoResponse.ok) {
+        const sd = await stegoResponse.json();
+        if (!sd.error) stegoData = sd;
+      }
+    } catch (_) {}
+    // ────────────────────────────────────────────────────────
+
     // Save to storage so popup panel can also display it
+    // is_stego and stego_result are new fields for popup(1).html
     chrome.storage.local.set({
       lastImageScan: {
-        prediction: data.prediction,
-        confidence: data.confidence,
-        timestamp:  new Date().toLocaleString(),
+        prediction:   data.prediction,
+        confidence:   data.confidence,
+        is_stego:     stegoData.is_stego,
+        stego_result: stegoData.result,
+        timestamp:    new Date().toLocaleString(),
       },
     });
 
@@ -421,7 +443,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       target: { tabId: tab.id },
       func: (result) => {
         document.getElementById("ai-scan-popup")?.remove();
-        const isAI  = result.prediction === "AI Generated";
+        const isAI    = result.prediction === "AI Generated";
+        const isStego = result.is_stego;
+
+        const stegoBadge = isStego
+          ? `<div style="margin-top:8px;font-size:12px;padding:4px 8px;border-radius:4px;
+               background:rgba(0,0,0,0.2);">⚠️ Hidden data detected in image</div>`
+          : `<div style="margin-top:6px;font-size:12px;opacity:0.8;">🔒 No hidden data found</div>`;
+
         const popup = document.createElement("div");
         popup.id    = "ai-scan-popup";
         popup.innerHTML = `
@@ -430,12 +459,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             <button id="close-img-popup" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;padding:0 0 0 12px;">×</button>
           </div>
           <div style="font-size:13px;opacity:0.9;">Confidence: ${result.confidence}%</div>
+          ${stegoBadge}
         `;
         Object.assign(popup.style, {
           position:        "fixed",
           top:             "20px",
           right:           "20px",
-          backgroundColor: isAI ? "#e67e22" : "#27ae60",
+          backgroundColor: isStego ? "#8e44ad" : (isAI ? "#e67e22" : "#27ae60"),
           color:           "#fff",
           padding:         "14px 16px",
           borderRadius:    "8px",
@@ -443,21 +473,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           fontSize:        "14px",
           boxShadow:       "0 4px 12px rgba(0,0,0,0.35)",
           fontFamily:      "Arial, sans-serif",
-          minWidth:        "200px",
+          minWidth:        "220px",
         });
         document.body.appendChild(popup);
         document.getElementById("close-img-popup")
           ?.addEventListener("click", () => popup.remove());
         setTimeout(() => popup.remove(), 8000);
       },
-      args: [{ prediction: data.prediction, confidence: data.confidence }],
+      args: [{ prediction: data.prediction, confidence: data.confidence, is_stego: stegoData.is_stego }],
     });
 
     chrome.notifications.create({
       type:     "basic",
       iconUrl:  "icons/icon48.png",
       title:    "📸 Image Scan Result",
-      message:  `${data.prediction} — Confidence: ${data.confidence}%`,
+      message:  `${data.prediction} — Confidence: ${data.confidence}%${stegoData.is_stego ? " | ⚠️ Hidden data detected" : ""}`,
     });
 
   } catch (err) {
@@ -557,4 +587,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 setInterval(() => tabStates.clear(), 30 * 60 * 1000);
 
-console.log("PhishShield background started — URL + Text + Image detection, single backend port 8000");
+console.log("PhishShield background started — URL + Text + Image + Stego detection, single backend port 8000");
