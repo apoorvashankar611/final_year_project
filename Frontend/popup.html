@@ -148,7 +148,7 @@
       .tab-panel { display: none; }
       .tab-panel.active { display: block; }
 
-      /* ── NEW: Image scan section ────────────────────────── */
+      /* ── Image scan section ─────────────────────────────── */
       #image-scan-section {
         margin-top: 4px;
       }
@@ -170,6 +170,18 @@
       #imageResult.ai    { background-color: #fff3e0; border-left: 4px solid #e67e22; color: #7f4000; }
       #imageResult.error { background-color: #ffebee; border-left: 4px solid #d9534f; color: #b71c1c; }
       #imageResult.idle  { background: #f5f5f5; border-left: 4px solid #bdbdbd; color: #757575; font-style: italic; font-weight: normal; }
+
+      /* ── Steganography result card (NEW) ────────────────── */
+      #stegoResult {
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: Arial, sans-serif;
+        margin-top: 8px;
+      }
+      #stegoResult.stego-clean    { background: #e8f5e9; border-left: 4px solid #43a047; color: #2e7d32; }
+      #stegoResult.stego-detected { background: #f3e5f5; border-left: 4px solid #8e44ad; color: #4a235a; }
+      #stegoResult.stego-idle     { background: #f5f5f5; border-left: 4px solid #bdbdbd; color: #757575; font-style: italic; }
     </style>
   </head>
   <body>
@@ -183,7 +195,7 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════
-         TAB 1: URL Detection (ORIGINAL — UNCHANGED)
+         TAB 1: URL Detection (UNCHANGED)
     ══════════════════════════════════════════════════════ -->
     <div id="url-tab" class="tab-panel active">
       <div id="currentStatus">
@@ -213,22 +225,31 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════
-         TAB 3: Image Detection (NEW)
-         Shows result of last right-click image scan
+         TAB 3: Image Detection (UPDATED)
+         Shows AI detection result + steganography result
     ══════════════════════════════════════════════════════ -->
     <div id="image-tab" class="tab-panel">
       <div id="image-scan-section">
-        <h4>📸 Last Image Scan</h4>
+
+        <!-- AI detection card (was the only card in old version) -->
+        <h4>📸 AI Detection</h4>
         <div id="imageResult" class="idle">
           No image scanned yet.<br>
           <small>Right-click any image and choose "Scan this image".</small>
         </div>
+
+        <!-- Steganography card (NEW) -->
+        <h4 style="margin-top:10px;">🔍 Steganography Detection</h4>
+        <div id="stegoResult" class="stego-idle">
+          No stego scan yet.
+        </div>
+
       </div>
     </div>
 
     <script src="popup.js"></script>
     <script>
-      // ── Tab switching ──────────────────────────────────────
+      // ── Tab switching (UNCHANGED) ──────────────────────────
       document.querySelectorAll(".tab-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
@@ -238,18 +259,34 @@
         });
       });
 
-      // ── Image result display ───────────────────────────────
+      // ── Image + Stego result display (UPDATED) ─────────────
       const imageResultDiv = document.getElementById("imageResult");
+      const stegoResultDiv = document.getElementById("stegoResult");
 
       function displayImageResult(result) {
         if (!result) {
           imageResultDiv.innerHTML = "No image scanned yet.<br><small>Right-click any image and choose \"Scan this image\".</small>";
           imageResultDiv.className = "idle";
+          stegoResultDiv.textContent = "No stego scan yet.";
+          stegoResultDiv.className = "stego-idle";
           return;
         }
+
+        // AI detection result (same as before)
         const isAI = result.prediction === "AI Generated";
         imageResultDiv.textContent = `${isAI ? "🤖 AI Generated" : "✅ Real Image"} — Confidence: ${result.confidence}%`;
         imageResultDiv.className = isAI ? "ai" : "real";
+
+        // Steganography result (NEW — reads is_stego from storage)
+        if (result.is_stego !== undefined) {
+          stegoResultDiv.textContent = result.is_stego
+            ? "⚠️ Suspicious — Hidden data detected in image"
+            : "🔒 Clean — No hidden data found";
+          stegoResultDiv.className = result.is_stego ? "stego-detected" : "stego-clean";
+        } else {
+          stegoResultDiv.textContent = "Stego scan unavailable.";
+          stegoResultDiv.className = "stego-idle";
+        }
       }
 
       // Load last result when popup opens

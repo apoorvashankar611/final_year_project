@@ -1,9 +1,9 @@
 # ============================================================
-# PhishShield Backend — FINAL (URL + TEXT + IMAGE WORKING)
+# PhishShield Backend — MERGED
+# URL + TEXT (FROZEN) + IMAGE + STEGO (from new version)
 # ============================================================
 
 import pickle
-import re
 import base64
 import joblib
 import numpy as np
@@ -12,12 +12,11 @@ import pandas as pd
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from io import BytesIO
 from PIL import Image
 
-from url_feature_extractor import URLFeatureExtractor
+from url_feature_extractor import URLFeatureExtractor   # FROZEN — do not modify
 
 # ────────────────────────────────────────────────────────────
 # FASTAPI SETUP
@@ -33,7 +32,7 @@ app.add_middleware(
 )
 
 # ============================================================
-# LOAD URL MODEL
+# LOAD URL MODEL  ← FROZEN
 # ============================================================
 
 scaler = joblib.load("scaler.pkl")
@@ -50,7 +49,7 @@ FEATURE_COLUMNS = [
 ]
 
 # ============================================================
-# LOAD TEXT MODEL
+# LOAD TEXT MODEL  ← FROZEN
 # ============================================================
 
 try:
@@ -63,7 +62,7 @@ except Exception as e:
     print(" Text model failed:", e)
 
 # ============================================================
-# LOAD IMAGE AI-DETECTION MODELS
+# LOAD IMAGE AI-DETECTION MODELS  ← REPLACED (new version)
 # ============================================================
 
 try:
@@ -93,7 +92,7 @@ class ImageInput(BaseModel):
     image_base64: str
 
 # ============================================================
-# IMAGE HELPER FUNCTIONS
+# IMAGE HELPER FUNCTIONS  ← REPLACED (new version)
 # ============================================================
 
 def decode_base64_image(image_base64: str):
@@ -132,7 +131,7 @@ def health():
     return {"status": "ok"}
 
 # ============================================================
-# URL DETECTION
+# URL DETECTION  ← FROZEN
 # ============================================================
 
 @app.post("/predict_url")
@@ -157,7 +156,7 @@ def predict_url(data: URLInput):
         return {"error": str(e)}
 
 # ============================================================
-# TEXT DETECTION
+# TEXT DETECTION  ← FROZEN
 # ============================================================
 
 @app.post("/predict-text")
@@ -189,7 +188,7 @@ def predict_text(data: TextInput):
         return {"error": str(e)}
 
 # ============================================================
-# IMAGE DETECTION (AI-generated vs Real)
+# IMAGE DETECTION (AI-generated vs Real)  ← REPLACED (new version)
 # ============================================================
 
 @app.post("/predict_image")
@@ -237,3 +236,82 @@ def predict_image(input_data: ImageInput):
             "confidence": 0,
             "error": str(e)
         }
+
+# ============================================================
+# STEGANOGRAPHY DETECTION  ← NEW (added from new version)
+# LSB Chi-square analysis — no model needed, pure statistical.
+# Natural images → high chi2 (random LSBs).
+# Stego images   → low chi2  (uniform/patterned LSBs).
+# ============================================================
+
+@app.post("/detect_stego")
+def detect_stego(input_data: ImageInput):
+    try:
+        img       = decode_base64_image(input_data.image_base64)
+        img_array = np.array(img)
+
+        lsb_plane = img_array & 1
+
+        chi2_scores = {}
+
+        for i, ch in enumerate(["R", "G", "B"]):
+            lsbs = lsb_plane[:, :, i].flatten()
+            observed = np.bincount(lsbs, minlength=2).astype(float)
+            expected = np.array([len(lsbs) / 2] * 2)
+            chi2 = float(np.sum((observed - expected) ** 2 / expected))
+            chi2_scores[ch] = round(chi2, 4)
+
+        avg_chi2 = float(np.mean(list(chi2_scores.values())))
+        is_stego = avg_chi2 < 100
+
+        if is_stego:
+            return {
+                "is_stego": True,
+                "risk": "High",
+                "result": "Hidden Data Detected",
+                "explanation": "This image may contain concealed data using steganography techniques.",
+                "possible_attacks": [
+                    "Hidden phishing URLs",
+                    "Malware payload delivery",
+                    "Command & control communication",
+                    "Data exfiltration"
+                ],
+                "avg_chi2": round(avg_chi2, 2)
+            }
+        else:
+            return {
+                "is_stego": False,
+                "risk": "Low",
+                "result": "Clean",
+                "explanation": "No statistical evidence of hidden data.",
+                "avg_chi2": round(avg_chi2, 2)
+            }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+# ============================================================
+# COMBINED IMAGE RISK  ← NEW (added from new version)
+# ============================================================
+
+@app.post("/analyze_image_full")
+def analyze_image_full(input_data: ImageInput):
+    try:
+        ai_result    = predict_image(input_data)
+        stego_result = detect_stego(input_data)
+
+        if stego_result.get("is_stego"):
+            final_risk = "High"
+        elif ai_result.get("prediction") == "AI Generated":
+            final_risk = "Medium"
+        else:
+            final_risk = "Low"
+
+        return {
+            "final_risk":     final_risk,
+            "ai_analysis":    ai_result,
+            "stego_analysis": stego_result
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
